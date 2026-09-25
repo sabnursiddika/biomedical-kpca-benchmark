@@ -1,0 +1,7 @@
+"Dataset","Observations","Predictors","P_to_N_Ratio","Negative_Class","Positive_Class","Raw_Missing_Cells","Duplicate_Predictor_Rows","Zero_Variance_Predictors"
+"Wisconsin",569,30,0.05,357,212,0,0,0
+"Pima",768,8,0.01,500,268,652,0,0
+"Colon",62,2000,32.26,22,40,0,0,0
+"Gravier",168,2905,17.29,111,57,0,0,0
+"Prostate",102,6033,59.15,50,52,0,0,0
+"Leukemia",72,7129,99.01,47,25,0,0,0

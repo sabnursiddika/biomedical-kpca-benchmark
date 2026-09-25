@@ -1,0 +1,14 @@
+.Rhistory
+.RData
+.Rproj.user/
+
+# Raw datasets: keep local until redistribution/source terms are verified
+data/wdbc.data
+data/pima.csv
+
+# Temporary benchmark checkpoints
+results/benchmark_results_final/repeat_checkpoint_*.rds
+results/benchmark_results_final/dataset_results_checkpoint_*.rds
+.DS_Store
+results/benchmark_results_final/research_questions.txt
+.Rapp.history
