@@ -2,7 +2,7 @@
 library(ggplot2)
 
 # 1. Load results
-setwd("~/Desktop/biomedical-kpca-benchmark")
+
 out <- "results/benchmark_results_final"
 res <- readRDS(file.path(out, "complete_benchmark_results_6datasets_FINAL.rds"))
 outer <- res$outer_results
