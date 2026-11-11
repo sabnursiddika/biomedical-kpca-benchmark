@@ -1,815 +1,137 @@
-# ============================================================
-# FINAL MANUSCRIPT FIGURES
-# Six-Dataset Biomedical Classification Benchmark
-# ============================================================
-
-# Run this script from the root of the repository:
-# biomedical-kpca-benchmark/
-
-required_packages <- c(
-  "ggplot2"
-)
-
-missing_packages <- required_packages[
-  !vapply(
-    required_packages,
-    requireNamespace,
-    logical(1),
-    quietly = TRUE
-  )
-]
-
-if (length(missing_packages) > 0) {
-  stop(
-    "Missing required package(s): ",
-    paste(missing_packages, collapse = ", ")
-  )
-}
 
 library(ggplot2)
-library(grid)
 
-PROJECT_DIR <- getwd()
+# 1. Load results
+setwd("~/Desktop/biomedical-kpca-benchmark")
+out <- "results/benchmark_results_final"
+res <- readRDS(file.path(out, "complete_benchmark_results_6datasets_FINAL.rds"))
+outer <- res$outer_results
+summ <- res$summary_results
 
-RESULT_DIR <- file.path(
-  PROJECT_DIR,
-  "results",
-  "benchmark_results_final"
-)
+stopifnot(nrow(outer) == 720, nrow(summ) == 48)
 
-final_results <- readRDS(
-  file.path(
-    RESULT_DIR,
-    "complete_benchmark_results_6datasets_FINAL.rds"
-  )
-)
+ds <- c("Colon", "Gravier", "Leukemia", "Pima", "Prostate", "Wisconsin")
+reps <- c(raw="Raw", pca="PCA", rbf_kpca="RBF-KPCA", local_kpca="Local-KPCA")
+cols <- c(Raw="#00BFC4", PCA="#7CAE00",
+          "RBF-KPCA"="#C77CFF", "Local-KPCA"="#F8766D")
+shapes <- c(Linear=16, Radial=17)
 
-outer_results   <- final_results$outer_results
-summary_results <- final_results$summary_results
+label_data <- function(d) {
+  d$Dataset <- factor(d$Dataset, levels=ds)
+  d$Rep <- factor(reps[d$Representation], levels=unname(reps))
+  d$Class <- factor(d$Classifier, levels=c("linear","radial"),
+                    labels=c("Linear","Radial"))
+  d
+}
+outer <- label_data(outer)
+summ <- label_data(summ)
 
-stopifnot(
-  nrow(outer_results) == 720,
-  nrow(summary_results) == 48
-)
-# ============================================================
-# FIGURE 1
-# Outer-test ROC-AUC across methods
-# ============================================================
+save_fig <- function(p, name, h) {
+  for (ext in c("pdf","png"))
+    ggsave(file.path(out, paste0(name,".",ext)),
+           p, width=11, height=h, units="in", dpi=600)
+}
 
-required_cols <- c(
-  "Dataset",
-  "Representation",
-  "Classifier",
-  "ROC_AUC"
-)
+base_theme <- theme_bw(base_size=11) +
+  theme(strip.background=element_rect(fill="grey82", color="grey40"),
+        strip.text=element_text(face="bold", size=11),
+        axis.text=element_text(size=9),
+        panel.grid.major=element_line(color="grey88", linewidth=.35),
+        panel.grid.minor=element_blank(),
+        panel.spacing=grid::unit(.25,"cm"),
+        legend.position="bottom")
 
-stopifnot(all(required_cols %in% names(outer_results)))
+# 2. Figure 1: Outer-test ROC-AUC
+methods <- as.vector(rbind(paste(unname(reps),"Linear",sep=" + "),
+                           paste(unname(reps),"Radial",sep=" + ")))
+outer$Method <- factor(paste(outer$Rep,outer$Class,sep=" + "),
+                       levels=rev(methods))
+means <- aggregate(ROC_AUC ~ Dataset+Method+Class+Rep, outer, mean)
 
-# Dataset order
-outer_results$Dataset <- factor(
-  outer_results$Dataset,
-  levels = c(
-    "Colon",
-    "Gravier",
-    "Leukemia",
-    "Pima",
-    "Prostate",
-    "Wisconsin"
-  )
-)
+fig1 <- ggplot(outer, aes(ROC_AUC,Method,color=Rep,shape=Class)) +
+  geom_point(alpha=.45,size=2,
+             position=position_jitter(width=0,height=.045)) +
+  geom_point(data=means,aes(ROC_AUC,Method,shape=Class),
+             inherit.aes=FALSE,color="black",size=3.6) +
+  facet_wrap(~Dataset,ncol=2,scales="free_x") +
+  scale_color_manual(values=cols,
+                     labels=c("Raw","PCA","RBF-KPCA","Locally scaled KPCA")) +
+  scale_shape_manual(values=shapes) +
+  labs(x="Outer-test ROC-AUC",y=NULL,
+       color="Representation",shape="Classifier") +
+  base_theme +
+  theme(strip.background=element_rect(fill="grey88",color="grey40"))
 
-# Representation labels
-outer_results$Representation_Label <- factor(
-  outer_results$Representation,
-  levels = c(
-    "raw",
-    "pca",
-    "rbf_kpca",
-    "local_kpca"
-  ),
-  labels = c(
-    "Raw",
-    "PCA",
-    "RBF-KPCA",
-    "Local-KPCA"
-  )
-)
+print(fig1)
+save_fig(fig1,"Figure1_Outer_Test_ROC_AUC_6Datasets",7.4)
 
-# Classifier labels
-outer_results$Classifier_Label <- factor(
-  outer_results$Classifier,
-  levels = c(
-    "linear",
-    "radial"
-  ),
-  labels = c(
-    "Linear",
-    "Radial"
-  )
-)
+# 3. Figure 2: Matched ROC-AUC differences
+keys <- c("Dataset","Outer_Repeat","Outer_Fold","Classifier")
+raw <- outer[outer$Representation=="raw",c(keys,"ROC_AUC")]
+trans <- outer[outer$Representation!="raw",
+               c(keys,"Representation","ROC_AUC")]
+names(raw)[5] <- "Raw_AUC"
+names(trans)[6] <- "Trans_AUC"
 
-# Method labels
-outer_results$Method <- paste(
-  outer_results$Representation_Label,
-  outer_results$Classifier_Label,
-  sep = " + "
-)
+matched <- merge(trans,raw,by=keys)
+matched$Delta <- matched$Trans_AUC-matched$Raw_AUC
+matched$Contrast <- paste0(reps[matched$Representation],
+                           " vs Raw: ",
+                           ifelse(matched$Classifier=="linear","Linear","Radial"))
+contrast_order <- as.vector(rbind(
+  paste0(unname(reps[-1])," vs Raw: Linear"),
+  paste0(unname(reps[-1])," vs Raw: Radial")))
+matched$Contrast <- factor(matched$Contrast,levels=rev(contrast_order))
+stopifnot(nrow(matched)==540)
 
-method_order <- c(
-  "Raw + Linear",
-  "Raw + Radial",
-  "PCA + Linear",
-  "PCA + Radial",
-  "RBF-KPCA + Linear",
-  "RBF-KPCA + Radial",
-  "Local-KPCA + Linear",
-  "Local-KPCA + Radial"
-)
+mean_delta <- aggregate(Delta ~ Dataset+Contrast,matched,mean)
 
-outer_results$Method <- factor(
-  outer_results$Method,
-  levels = rev(method_order)
-)
+fig2 <- ggplot(matched,aes(Delta,Contrast)) +
+  geom_vline(xintercept=0,color="grey30",linewidth=.4) +
+  geom_point(color="grey50",alpha=.35,size=1.4,
+             position=position_jitter(width=0,height=.045,seed=2026)) +
+  geom_point(data=mean_delta,
+             aes(Delta,Contrast,
+                 color=sub(" vs Raw:.*$","",as.character(Contrast))),
+             inherit.aes=FALSE,shape=18,size=2.8) +
+  scale_color_manual(values=cols[-1],guide="none") +
+  facet_wrap(~Dataset,ncol=2,scales="free_x") +
+  labs(title="Change in ROC-AUC Relative to Raw Predictors",
+       x=expression(Delta*"ROC-AUC"),y=NULL) +
+  theme_bw(base_size=10) +
+  theme(plot.title=element_text(face="bold",size=13,
+                                margin=margin(b=8)),
+        strip.background=element_rect(fill="grey90",
+                                      color="grey70",linewidth=.35),
+        strip.text=element_text(face="bold",size=9),
+        axis.text=element_text(size=8),
+        panel.grid.major=element_line(color="grey92",linewidth=.25),
+        panel.grid.minor=element_blank(),
+        panel.border=element_rect(color="grey70",fill=NA,linewidth=.35),
+        panel.spacing=grid::unit(.25,"cm"))
 
-# Representation colors
-representation_colors <- c(
-  "Raw"        = "#00BFC4",
-  "PCA"        = "#7CAE00",
-  "RBF-KPCA"   = "#C77CFF",
-  "Local-KPCA" = "#F8766D"
-)
+print(fig2)
+save_fig(fig2,"Figure2_Matched_Delta_ROC_AUC_6Datasets",6.4)
 
-# Mean ROC-AUC
-mean_results <- aggregate(
-  ROC_AUC ~
-    Dataset +
-    Method +
-    Classifier_Label +
-    Representation_Label,
-  data = outer_results,
-  FUN = mean
-)
+# 4. Figure 3: Performance versus computation time
+summ$Rep <- factor(summ$Rep,
+                   levels=c("Local-KPCA","PCA","Raw","RBF-KPCA"))
 
-# Create Figure 1
-ggfig1 <- ggplot(
-  outer_results,
-  aes(
-    x = ROC_AUC,
-    y = Method,
-    color = Representation_Label,
-    shape = Classifier_Label
-  )
-) +
-  
-  geom_point(
-    alpha = 0.45,
-    size = 2.0,
-    position = position_jitter(
-      width = 0,
-      height = 0.045
-    )
-  ) +
-  
-  geom_point(
-    data = mean_results,
-    aes(
-      x = ROC_AUC,
-      y = Method,
-      shape = Classifier_Label
-    ),
-    inherit.aes = FALSE,
-    color = "black",
-    size = 3.6
-  ) +
-  
-  facet_wrap(
-    ~ Dataset,
-    ncol = 2,
-    scales = "free_x"
-  ) +
-  
-  scale_color_manual(
-    values = representation_colors,
-    breaks = c(
-      "Raw",
-      "PCA",
-      "RBF-KPCA",
-      "Local-KPCA"
-    ),
-    labels = c(
-      "Raw",
-      "PCA",
-      "RBF-KPCA",
-      "Locally scaled KPCA"
-    )
-  ) +
-  
-  scale_shape_manual(
-    values = c(
-      "Linear" = 16,
-      "Radial" = 17
-    )
-  ) +
-  
-  labs(
-    x = "Outer-test ROC-AUC",
-    y = NULL,
-    color = "Representation",
-    shape = "Classifier"
-  ) +
-  
-  guides(
-    shape = guide_legend(
-      order = 1,
-      nrow = 1
-    ),
-    color = guide_legend(
-      order = 2,
-      nrow = 1
-    )
-  ) +
-  
-  theme_bw(base_size = 11) +
-  
-  theme(
-    strip.background = element_rect(
-      fill = "grey88",
-      color = "grey40",
-      linewidth = 0.4
-    ),
-    
-    strip.text = element_text(
-      face = "bold",
-      size = 11
-    ),
-    
-    axis.title.x = element_text(
-      size = 11,
-      margin = margin(t = 6)
-    ),
-    
-    axis.text.x = element_text(size = 9),
-    axis.text.y = element_text(size = 9),
-    
-    panel.grid.major = element_line(
-      linewidth = 0.35,
-      color = "grey88"
-    ),
-    
-    panel.grid.minor = element_blank(),
-    
-    panel.border = element_rect(
-      color = "grey35",
-      fill = NA,
-      linewidth = 0.5
-    ),
-    
-    legend.position = "bottom",
-    legend.box = "horizontal",
-    legend.box.just = "center",
-    
-    legend.title = element_text(
-      size = 10,
-      face = "plain"
-    ),
-    
-    legend.text = element_text(size = 9),
-    
-    legend.key.width = grid::unit(
-      0.55,
-      "cm"
-    ),
-    
-    legend.spacing.x = grid::unit(
-      0.10,
-      "cm"
-    ),
-    
-    legend.margin = margin(
-      t = 4,
-      r = 0,
-      b = 0,
-      l = 0
-    ),
-    
-    panel.spacing = grid::unit(
-      0.25,
-      "cm"
-    ),
-    
-    plot.margin = margin(
-      t = 5,
-      r = 6,
-      b = 5,
-      l = 5
-    )
-  )
-
-# Display Figure 1
-ggfig1
-
-# Save Figure 1
-ggsave(
-  file.path(
-    RESULT_DIR,
-    "Figure1_Outer_Test_ROC_AUC_6Datasets.pdf"
-  ),
-  plot = ggfig1,
-  width = 11,
-  height = 7.4,
-  units = "in",
-  limitsize = FALSE
-)
-
-ggsave(
-  file.path(
-    RESULT_DIR,
-    "Figure1_Outer_Test_ROC_AUC_6Datasets.png"
-  ),
-  plot = ggfig1,
-  width = 11,
-  height = 7.4,
-  units = "in",
-  dpi = 600,
-  limitsize = FALSE
-)
-# ============================================================
-# FIGURE 2
-# Fold-matched change in ROC-AUC relative to raw predictors
-# ============================================================
-
-raw_auc <- outer_results[
-  outer_results$Representation == "raw",
-  c(
-    "Dataset",
-    "Outer_Repeat",
-    "Outer_Fold",
-    "Classifier",
-    "ROC_AUC"
-  )
-]
-
-names(raw_auc)[
-  names(raw_auc) == "ROC_AUC"
-] <- "ROC_AUC_Raw"
-
-transformed_auc <- outer_results[
-  outer_results$Representation %in%
-    c(
-      "pca",
-      "rbf_kpca",
-      "local_kpca"
-    ),
-  c(
-    "Dataset",
-    "Outer_Repeat",
-    "Outer_Fold",
-    "Representation",
-    "Classifier",
-    "ROC_AUC"
-  )
-]
-
-names(transformed_auc)[
-  names(transformed_auc) == "ROC_AUC"
-] <- "ROC_AUC_Transformed"
-
-matched_auc <- merge(
-  transformed_auc,
-  raw_auc,
-  by = c(
-    "Dataset",
-    "Outer_Repeat",
-    "Outer_Fold",
-    "Classifier"
-  )
-)
-
-matched_auc$Delta_ROC_AUC <-
-  matched_auc$ROC_AUC_Transformed -
-  matched_auc$ROC_AUC_Raw
-
-representation_names <- c(
-  "pca"        = "PCA",
-  "rbf_kpca"   = "RBF-KPCA",
-  "local_kpca" = "Local-KPCA"
-)
-
-classifier_names <- c(
-  "linear" = "Linear",
-  "radial" = "Radial"
-)
-
-matched_auc$Contrast <- paste0(
-  representation_names[
-    matched_auc$Representation
-  ],
-  " vs Raw: ",
-  classifier_names[
-    matched_auc$Classifier
-  ]
-)
-
-contrast_order <- c(
-  "PCA vs Raw: Linear",
-  "PCA vs Raw: Radial",
-  "RBF-KPCA vs Raw: Linear",
-  "RBF-KPCA vs Raw: Radial",
-  "Local-KPCA vs Raw: Linear",
-  "Local-KPCA vs Raw: Radial"
-)
-
-matched_auc$Contrast <- factor(
-  matched_auc$Contrast,
-  levels = rev(contrast_order)
-)
-
-matched_auc$Dataset <- factor(
-  matched_auc$Dataset,
-  levels = c(
-    "Colon",
-    "Gravier",
-    "Leukemia",
-    "Pima",
-    "Prostate",
-    "Wisconsin"
-  )
-)
-
-stopifnot(nrow(matched_auc) == 540)
-
-mean_delta <- aggregate(
-  Delta_ROC_AUC ~ Dataset + Contrast,
-  data = matched_auc,
-  FUN = mean
-)
-
-ggfig2 <- ggplot(
-  matched_auc,
-  aes(
-    x = Delta_ROC_AUC,
-    y = Contrast
-  )
-) +
-  
-  geom_vline(
-    xintercept = 0,
-    color = "black",
-    linewidth = 0.5
-  ) +
-  
-  geom_point(
-    color = "grey45",
-    alpha = 0.55,
-    size = 2.0,
-    position = position_jitter(
-      width = 0,
-      height = 0.045
-    )
-  ) +
-  
-  geom_point(
-    data = mean_delta,
-    aes(
-      x = Delta_ROC_AUC,
-      y = Contrast
-    ),
-    inherit.aes = FALSE,
-    shape = 18,
-    color = "black",
-    size = 3.7
-  ) +
-  
-  facet_wrap(
-    ~ Dataset,
-    ncol = 2,
-    scales = "free_x"
-  ) +
-  
-  labs(
-    title = "Change in ROC-AUC relative to raw predictors",
-    x = expression(Delta * "ROC-AUC"),
-    y = NULL
-  ) +
-  
-  theme_bw(
-    base_size = 11
-  ) +
-  
-  theme(
-    plot.title = element_text(
-      face = "bold",
-      size = 13,
-      hjust = 0,
-      margin = margin(
-        b = 7
-      )
-    ),
-    
-    strip.background = element_rect(
-      fill = "grey82",
-      color = "grey40",
-      linewidth = 0.5
-    ),
-    
-    strip.text = element_text(
-      face = "bold",
-      size = 11
-    ),
-    
-    axis.title.x = element_text(
-      size = 11,
-      margin = margin(
-        t = 6
-      )
-    ),
-    
-    axis.text.x = element_text(
-      size = 9
-    ),
-    
-    axis.text.y = element_text(
-      size = 9
-    ),
-    
-    panel.grid.major = element_line(
-      color = "grey88",
-      linewidth = 0.35
-    ),
-    
-    panel.grid.minor = element_blank(),
-    
-    panel.border = element_rect(
-      color = "grey40",
-      fill = NA,
-      linewidth = 0.5
-    ),
-    
-    panel.spacing = grid::unit(
-      0.25,
-      "cm"
-    ),
-    
-    plot.margin = margin(
-      t = 5,
-      r = 6,
-      b = 5,
-      l = 5
-    )
-  )
-
-ggfig2
-
-ggsave(
-  file.path(
-    RESULT_DIR,
-    "Figure2_Matched_Delta_ROC_AUC_6Datasets.pdf"
-  ),
-  plot = ggfig2,
-  width = 11,
-  height = 7.8,
-  units = "in",
-  limitsize = FALSE
-)
-
-ggsave(
-  file.path(
-    RESULT_DIR,
-    "Figure2_Matched_Delta_ROC_AUC_6Datasets.png"
-  ),
-  plot = ggfig2,
-  width = 11,
-  height = 7.8,
-  units = "in",
-  dpi = 600,
-  limitsize = FALSE
-)
-# ============================================================
-# FIGURE 3
-# Predictive performance versus computational cost
-# ============================================================
-
-required_summary_cols <- c(
-  "Dataset",
-  "Representation",
-  "Classifier",
-  "ROC_AUC_Mean",
-  "Mean_Elapsed_Seconds"
-)
-
-stopifnot(
-  all(required_summary_cols %in% names(summary_results))
-)
-
-summary_results$Dataset <- factor(
-  summary_results$Dataset,
-  levels = c(
-    "Colon",
-    "Gravier",
-    "Leukemia",
-    "Pima",
-    "Prostate",
-    "Wisconsin"
-  )
-)
-
-summary_results$Representation_Label <- factor(
-  summary_results$Representation,
-  levels = c(
-    "local_kpca",
-    "pca",
-    "raw",
-    "rbf_kpca"
-  ),
-  labels = c(
-    "Local-KPCA",
-    "PCA",
-    "Raw",
-    "RBF-KPCA"
-  )
-)
-
-summary_results$Classifier_Label <- factor(
-  summary_results$Classifier,
-  levels = c(
-    "linear",
-    "radial"
-  ),
-  labels = c(
-    "Linear",
-    "Radial"
-  )
-)
-
-ggfig3 <- ggplot(
-  summary_results,
-  aes(
-    x = Mean_Elapsed_Seconds,
-    y = ROC_AUC_Mean,
-    color = Representation_Label,
-    shape = Classifier_Label
-  )
-) +
-  
-  geom_point(
-    size = 4.6,
-    alpha = 0.95
-  ) +
-  
-  facet_wrap(
-    ~ Dataset,
-    ncol = 2,
-    scales = "free_y"
-  ) +
-  
+fig3 <- ggplot(summ,
+               aes(Mean_Elapsed_Seconds,ROC_AUC_Mean,color=Rep,shape=Class)) +
+  geom_point(size=4.6,alpha=.95) +
+  facet_wrap(~Dataset, ncol=2, scales="free_y") +
+  scale_y_continuous(expand=expansion(mult=c(0.08, 0.20))) +
   scale_x_log10() +
-  
-  scale_color_manual(
-    values = representation_colors,
-    breaks = c(
-      "Local-KPCA",
-      "PCA",
-      "Raw",
-      "RBF-KPCA"
-    )
-  ) +
-  
-  scale_shape_manual(
-    values = c(
-      "Linear" = 16,
-      "Radial" = 17
-    )
-  ) +
-  
-  labs(
-    title = "Predictive performance versus computational cost",
-    x = "Mean computation time per outer evaluation (seconds, log scale)",
-    y = "Mean ROC-AUC",
-    color = "Representation",
-    shape = "Classifier"
-  ) +
-  
-  guides(
-    shape = guide_legend(
-      order = 1,
-      nrow = 1
-    ),
-    color = guide_legend(
-      order = 2,
-      nrow = 1
-    )
-  ) +
-  
-  theme_bw(base_size = 11) +
-  
-  theme(
-    plot.title = element_text(
-      face = "bold",
-      size = 13,
-      hjust = 0,
-      margin = margin(b = 8)
-    ),
-    
-    strip.background = element_rect(
-      fill = "grey82",
-      color = "grey40",
-      linewidth = 0.5
-    ),
-    
-    strip.text = element_text(
-      face = "bold",
-      size = 11
-    ),
-    
-    axis.title.x = element_text(
-      size = 11,
-      margin = margin(t = 6)
-    ),
-    
-    axis.title.y = element_text(
-      size = 11,
-      margin = margin(r = 6)
-    ),
-    
-    axis.text.x = element_text(
-      size = 9
-    ),
-    
-    axis.text.y = element_text(
-      size = 9
-    ),
-    
-    panel.grid.major = element_line(
-      color = "grey88",
-      linewidth = 0.35
-    ),
-    
-    panel.grid.minor = element_blank(),
-    
-    panel.border = element_rect(
-      color = "grey40",
-      fill = NA,
-      linewidth = 0.5
-    ),
-    
-    legend.position = "bottom",
-    legend.box = "horizontal",
-    legend.box.just = "center",
-    
-    legend.title = element_text(
-      size = 10
-    ),
-    
-    legend.text = element_text(
-      size = 9
-    ),
-    
-    legend.key.width = grid::unit(
-      0.55,
-      "cm"
-    ),
-    
-    legend.spacing.x = grid::unit(
-      0.10,
-      "cm"
-    ),
-    
-    panel.spacing = grid::unit(
-      0.25,
-      "cm"
-    ),
-    
-    plot.margin = margin(
-      t = 5,
-      r = 6,
-      b = 5,
-      l = 5
-    )
-  )
+  scale_color_manual(values=cols,
+                     breaks=c("Local-KPCA","PCA","Raw","RBF-KPCA")) +
+  scale_shape_manual(values=shapes) +
+  labs(title="Predictive performance versus computational cost",
+       x="Mean computation time per outer evaluation (seconds, log scale)",
+       y="Mean ROC-AUC",color="Representation",shape="Classifier") +
+  base_theme +
+  theme(plot.title=element_text(face="bold",size=13,
+                                margin=margin(b=8)))
 
-ggfig3
-
-ggsave(
-  file.path(
-    RESULT_DIR,
-    "Figure3_Performance_vs_Cost_6Datasets.pdf"
-  ),
-  plot = ggfig3,
-  width = 11,
-  height = 7.8,
-  units = "in",
-  limitsize = FALSE
-)
-
-ggsave(
-  file.path(
-    RESULT_DIR,
-    "Figure3_Performance_vs_Cost_6Datasets.png"
-  ),
-  plot = ggfig3,
-  width = 11,
-  height = 7.8,
-  units = "in",
-  dpi = 600,
-  limitsize = FALSE
-)
+print(fig3)
+save_fig(fig3,"Figure3_Performance_vs_Cost_6Datasets",7.8)
