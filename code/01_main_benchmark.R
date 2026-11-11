@@ -11,14 +11,16 @@ required_packages <- c(
   "datamicroarray"
 )
 
-# ------------------------------------------------------------
 # PROJECT PATHS
-# ------------------------------------------------------------
-# Load datasets
-DATA_DIR <- "biomedical_kpca_project/biomedical-kpca-benchmark/data"
+
+DATA_DIR <- "data"
+RESULTS_DIR <- "results"
+
+dir.create(RESULTS_DIR, showWarnings = FALSE, recursive = TRUE)
 
 pima <- read.table(file.path(DATA_DIR, "pima.csv"),
                    sep = ",", header = FALSE)
+
 names(pima) <- c("Pregnancies", "Glucose", "BloodPressure",
                  "SkinThickness", "Insulin", "BMI",
                  "DiabetesPedigree", "Age", "Outcome")
@@ -26,6 +28,8 @@ names(pima) <- c("Pregnancies", "Glucose", "BloodPressure",
 wisconsin <- read.table(file.path(DATA_DIR, "wdbc.data"),
                         sep = ",", header = FALSE)
 
+dim(pima)
+dim(wisconsin)
 # Results folder
 RESULTS_DIR <- "biomedical_kpca_project/biomedical-kpca-benchmark/results"
 dir.create(RESULTS_DIR, showWarnings = FALSE, recursive = TRUE)
